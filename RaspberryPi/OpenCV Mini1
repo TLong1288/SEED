@@ -1,0 +1,108 @@
+#Elena Ramirez
+#SEED Lab 2pm
+#Group 7
+#Mini project 1
+
+from picamera.array import PiRGBArray
+from picamera import PiCamera
+import time
+from time import sleep
+import cv2
+import numpy as np
+from cv2 import aruco
+import sys
+
+#set up aruco dictionary
+ARUCO_DICT = {
+    "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
+    "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
+    "DICT_4X4_250": cv2.aruco.DICT_4X4_250,
+    "DICT_4X4_1000": cv2.aruco.DICT_4X4_1000,
+    "DICT_5X5_50": cv2.aruco.DICT_5X5_50,
+    "DICT_5X5_100": cv2.aruco.DICT_5X5_100,
+    "DICT_5X5_250": cv2.aruco.DICT_5X5_250,
+    "DICT_5X5_1000": cv2.aruco.DICT_5X5_1000,
+    "DICT_6X6_50": cv2.aruco.DICT_6X6_50,
+    "DICT_6X6_100": cv2.aruco.DICT_6X6_100,
+    "DICT_6X6_250": cv2.aruco.DICT_6X6_250,
+    "DICT_6X6_1000": cv2.aruco.DICT_6X6_1000,
+    "DICT_7X7_50": cv2.aruco.DICT_7X7_50,
+    "DICT_7X7_100": cv2.aruco.DICT_7X7_100,
+    "DICT_7X7_250": cv2.aruco.DICT_7X7_250,
+    "DICT_7X7_1000": cv2.aruco.DICT_7X7_1000,
+    "DICT_ARUCO_ORIGINAL": cv2.aruco.DICT_ARUCO_ORIGINAL,
+    "DICT_APRILTAG_16h5": cv2.aruco.DICT_APRILTAG_16h5,
+    "DICT_APRILTAG_25h9": cv2.aruco.DICT_APRILTAG_25h9,
+    "DICT_APRILTAG_36h10": cv2.aruco.DICT_APRILTAG_36h10,
+    "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
+}
+
+#set up camera
+camera = PiCamera()
+rawImage = PiRGBArray
+time.sleep(0.1)
+
+#Set up calibration steps
+#check awb_mode and awb_gains
+#calibration will settle on its own
+camera.exposure_mode = 'off'
+gains = camera.awb_gains
+print("Camera gains value: "+str(gains))
+camera.awb_mode = 'off'
+camera.awb_gains = gains
+
+#Begin ArUCo detection
+#show preview
+camera.start_preview()
+sleep(5)
+camera.stop_preview()
+
+#take picture
+try:
+    camera.capture('/home/pi/Documents/Image captures/detection.jpg')
+    print("Capture successful")
+except:
+    print("Capture failed.")
+
+#convert to greyscale and detect marker id
+arucoDetect = cv2.imread('/home/pi/Documents/Image captures/detection.jpg', 0)
+arucoDictionary = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_5X5_100"])
+arucoParameter = cv2.aruco.DetectorParameters_create()
+(coordinates, ids, rejectedIds) = cv2.aruco.detectMarkers(arucoDetect, arucoDictionary, parameters=arucoParameter)
+
+#verify marker existence and print ids
+if len(coordinates) > 0:
+    ids = ids.flatten()
+    print("Detected markers: "+str(ids))
+
+    #convert marker coordinates to integers
+    for (markerCoord, markerID) in zip(coordinates, ids):
+        coordinates = markerCoord.reshape((4,2))
+        (topLeft, topRight, bottomRight, bottomLeft) = coordinates
+            
+        topLeft = (int(topLeft[0]), int(topLeft[1]))
+        topRight = (int(topRight[0]), int(topRight[1]))
+        bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+        bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+
+        #calculate the position of the marker
+        #use marker center location in compas quadrant
+        (height, width) = arucoDetect.shape
+
+        #determine quadrant location
+        #aruco center gives x then y coordinates of marker center
+        arucoCenter = [(topLeft[0] + ((topRight[0] - topLeft[0])/2)), (topRight[1] + ((bottomRight[1] - topRight[1])/2))]
+
+        #print loction of the marker
+        if arucoCenter[0] < (int(width)/2) and arucoCenter[1] < (int(height)/2):
+            print("Marker detected in NW quadrant.")
+        elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] < (int(height)/2):
+            print("Marker detected in NE quadrant.")
+        elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
+            print("Marker detected in SW quadrant.")
+        elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] > (int(height)/2):
+            print("Marker detected in SE quadrant.")
+        else:
+            print("Quadrant cannot be determined.")
+else:
+    print("No markers detected.")
