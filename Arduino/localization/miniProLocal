@@ -1,0 +1,52 @@
+//Seed lab assignment 2
+//Victoria Polda
+//09/14/2022
+
+#include <Encoder.h>
+//Pin assignment
+Encoder wheel(2, 4);
+
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("Seed: Mini localization");
+}
+
+//Constants and variables
+long positionWheel  = -999;
+long newPositionWheel;
+double angularPosition = 0;
+int N = 32; //check this 800
+
+void loop() {
+  newPositionWheel = wheel.read();
+  
+  if (newPositionWheel != positionWheel) {
+    Serial.println(newPositionWheel);
+    positionWheel = newPositionWheel;
+
+    //Actual angular position equation
+    //angularPosition = 4*PI*positionWheel / N; 
+
+    //Might need to redo the conditions, make them more general
+
+    while (positionWheel < 0) {
+     positionWheel = positionWheel + N;
+    }
+    
+    Serial.print("Position: ");
+    if (positionWheel % N <= N/8) { //zero
+      Serial.println("0");
+    } else if ((positionWheel % N >= N/4 - N/16) && (positionWheel % N <= N/4 + N/16)) { // pi/2
+      Serial.println("pi/4");
+    } else if ((positionWheel % N >= N/2 - N/16) && (positionWheel % N <= N/2 + N/16)) { // pi
+      Serial.println("pi/2");
+    } else if ((positionWheel % N >= N*3/4 - N/16) && (positionWheel % N <= N*3/4 + N/16)) { // 3pi/2
+      Serial.println("3pi/4");
+    } 
+    
+    Serial.print(positionWheel);
+    
+  }
+  
+}
