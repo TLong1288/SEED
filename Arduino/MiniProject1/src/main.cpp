@@ -8,6 +8,8 @@
 
 #define DIR 8
 
+#define DEADBAND 10
+
 #define Kp 85
 #define Ki 10
 #define Kd 8UL
@@ -70,6 +72,10 @@ void loop() {
   // Calculate the motor power from pid constants
   motorPower = Kp*(targetPosition - position) + (Ki*errorIntegral)/1000 + (Kd*8000UL*((targetPosition - position) - (lastPositionError)))/((int32_t)deltaTime);
   
+  if(abs(targetPosition - position) < DEADBAND){
+    motorPower = 0;
+  }
+
   // Set the previous position error for the D term
   lastPositionError = targetPosition - position;
 
