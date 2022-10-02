@@ -1,18 +1,63 @@
-#Elena Ramirez
+#FINAL COPY
 #SEED Lab 2pm
 #Group 7
 #Mini project 1
 
-from picamera.array import PiRGBArray
-from picamera import PiCamera
+import serial
 import time
-from time import sleep
 import cv2
 import numpy as np
-from cv2 import aruco
 import sys
+import board
+import adafruit_character_lcd.character_lcd_rgb_i2c as character_lcd
+from time import sleep
+from picamera.array import PiRGBArray
+from picamera import PiCamera
+from cv2 import aruco
 
-#set up aruco dictionary
+# COMM - This is the address we setup in the Arduino Program
+ser = serial.Serial('/dev/ttyACM0', 115200)
+
+ARUCO_MARKER = 0
+# COMM - Wait for connection to complete
+time.sleep(3)
+
+# COMM - LCD Stuff
+def LCD_stuff(SENT, RXED):
+    # Modify this if you have a different sized Character LCD
+    lcd_columns = 16
+    lcd_rows = 2
+
+    # for RPI version 1, use “bus = smbus.SMBus(0)”
+    #bus = smbus2.SMBus(1)
+
+    # Initialise I2C bus.
+    i2c = board.I2C()  # uses board.SCL and board.SDA
+
+    # Initialise the LCD class
+    lcd = character_lcd.Character_LCD_RGB_I2C(i2c, lcd_columns, lcd_rows)
+        
+    lcd.clear()
+    
+    # Set LCD color to red
+    lcd.color = [0, 100, 0]
+    
+    # Print two line message
+    lcd.message = "SENT: " + str(SENT) + "\nRXED: " + str(RXED)
+    return None
+
+# COMM - Function to read serial
+def ReadfromArduino():
+    while(ser.in_waiting > 0):
+        try:
+            line = ser.readline().decode('utf-8').rstrip()
+            print("Serial output: ", line)
+            
+        except:
+            print("Communication Error")
+        return line
+
+# COMP VIS - set up aruco dictionary
 ARUCO_DICT = {
     "DICT_4X4_50": cv2.aruco.DICT_4X4_50,
     "DICT_4X4_100": cv2.aruco.DICT_4X4_100,
@@ -37,72 +82,93 @@ ARUCO_DICT = {
     "DICT_APRILTAG_36h11": cv2.aruco.DICT_APRILTAG_36h11
 }
 
-#set up camera
-camera = PiCamera()
-rawImage = PiRGBArray
-time.sleep(0.1)
-
-#Set up calibration steps
-#check awb_mode and awb_gains
-#calibration will settle on its own
-camera.exposure_mode = 'off'
-gains = camera.awb_gains
-print("Camera gains value: "+str(gains))
-camera.awb_mode = 'off'
-camera.awb_gains = gains
-
-#Begin ArUCo detection
-#show preview
-camera.start_preview()
-sleep(5)
-camera.stop_preview()
-
-#take picture
-try:
-    camera.capture('/home/pi/Documents/Image captures/detection.jpg')
-    print("Capture successful")
-except:
-    print("Capture failed.")
-
-#convert to greyscale and detect marker id
-arucoDetect = cv2.imread('/home/pi/Documents/Image captures/detection.jpg', 0)
+# COMP VIS - set up camera
 arucoDictionary = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_5X5_100"])
 arucoParameter = cv2.aruco.DetectorParameters_create()
-(coordinates, ids, rejectedIds) = cv2.aruco.detectMarkers(arucoDetect, arucoDictionary, parameters=arucoParameter)
 
-#verify marker existence and print ids
-if len(coordinates) > 0:
-    ids = ids.flatten()
-    print("Detected markers: "+str(ids))
+print("enter\'q\' to exit video capture") 
 
-    #convert marker coordinates to integers
-    for (markerCoord, markerID) in zip(coordinates, ids):
-        coordinates = markerCoord.reshape((4,2))
-        (topLeft, topRight, bottomRight, bottomLeft) = coordinates
+camera = cv2.VideoCapture(0)
+# COMP VIS - Set up calibration steps
+#check awb_mode and awb_gains
+#calibration will settle on its own
+#camera.exposure_mode = 'off'
+#gains = camera.awb_gains
+#print("Camera gains value: "+str(gains))
+#camera.awb_mode = 'off'
+#camera.awb_gains = gains
+
+# COMP VIS - Begin ArUCo detection
+
+lastMarker = 0
+
+while(True):
+    ret, frame = camera.read()
+    
+    grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    cv2.imshow('frame',grey)
+    
+    (coordinates, ids, rejectedIds) = cv2.aruco.detectMarkers(frame, arucoDictionary, parameters=arucoParameter)
+
+    # COMP VIS - verify marker existence and print ids
+    if len(coordinates) > 0:
+        ids = ids.flatten()
+
+        #convert marker coordinates to integers
+        for (markerCoord, markerID) in zip(coordinates, ids):
+            coordinates = markerCoord.reshape((4,2))
+            (topLeft, topRight, bottomRight, bottomLeft) = coordinates
             
-        topLeft = (int(topLeft[0]), int(topLeft[1]))
-        topRight = (int(topRight[0]), int(topRight[1]))
-        bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-        bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+            topLeft = (int(topLeft[0]), int(topLeft[1]))
+            topRight = (int(topRight[0]), int(topRight[1]))
+            bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+            bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
 
-        #calculate the position of the marker
-        #use marker center location in compas quadrant
-        (height, width) = arucoDetect.shape
+            #calculate the position of the marker
+            #use marker center location in compas quadrant
+            #(height, width) = frame.shape
 
-        #determine quadrant location
-        #aruco center gives x then y coordinates of marker center
-        arucoCenter = [(topLeft[0] + ((topRight[0] - topLeft[0])/2)), (topRight[1] + ((bottomRight[1] - topRight[1])/2))]
+            #determine quadrant location
+            #aruco center gives x then y coordinates of marker center
+            arucoCenter = [(topLeft[0] + ((topRight[0] - topLeft[0])/2)), (topRight[1] + ((bottomRight[1] - topRight[1])/2))]
+            height = 480
+            width = 680
+        
+            #print loction of the marker
+            if arucoCenter[0] < (int(width)/2) and arucoCenter[1] < (int(height)/2):
+                ARUCO_MARKER = 2
+            elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] < (int(height)/2):
+                ARUCO_MARKER = 1
+            elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
+                ARUCO_MARKER = 3
+            elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] > (int(height)/2):
+                ARUCO_MARKER = 4
+            else:
+                ARUCO_MARKER = 0
+    
+    if lastMarker != ARUCO_MARKER:
+        # COMM - Remember to encode the string to bytes
+        print ("\nRPI: Hi Arduino, I sent you ", ARUCO_MARKER)
+        ser.write(bytes([ARUCO_MARKER]))
 
-        #print loction of the marker
-        if arucoCenter[0] < (int(width)/2) and arucoCenter[1] < (int(height)/2):
-            print("Marker detected in NW quadrant.")
-        elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] < (int(height)/2):
-            print("Marker detected in NE quadrant.")
-        elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
-            print("Marker detected in SW quadrant.")
-        elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] > (int(height)/2):
-            print("Marker detected in SE quadrant.")
-        else:
-            print("Quadrant cannot be determined.")
-else:
-    print("No markers detected.")
+        # COMM - Wait for Arduino to set up response
+        #time.sleep(2)
+
+        ser.flush()
+        # COMM - Read from Arduino
+        CURRENT_POS = ReadfromArduino()
+
+        # COMM - Print to LCD
+        LCD_stuff(ARUCO_MARKER, CURRENT_POS)
+        
+        lastMarker = ARUCO_MARKER
+
+        #while True:
+            #ReadFromArduino()
+        
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+camera.release()
+cv2.destroyAllWindows()
+

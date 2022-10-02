@@ -1,4 +1,5 @@
 #include <Arduino.h>
+//#include <Encoder.h>
 
 #define PULSES_PER_REVOLUTION 800
 
@@ -10,13 +11,19 @@
 
 #define DEADBAND 10
 
-#define Kp 85
+#define Kp 850
 #define Ki 10
 #define Kd 8UL
 
-int32_t targetPosition = 800;
+//////////////GLOBALS////////////////
+int32_t targetPosition = 0;
 int32_t position = 0;
+int32_t num = 0;
 
+bool DataRead;
+byte data;
+
+//////////////HEADERS////////////////
 // ISR that runs whenever a pin change occurs on ENC_A pin
 // Increments/decrements position
 void encoderISR();
@@ -27,9 +34,12 @@ void setMotor(int32_t motorPower);
 
 // Clamps value between the max and min
 int32_t clamp(int32_t value, int32_t maximum, int32_t minimum);
+//////////////END HEADERS////////////////
 
+//////////////FUNCTIONS////////////////
 void setup() {
   Serial.begin(115200);
+  
   // put your setup code here, to run once:
   // Set the encoder pins to input
   pinMode(ENC_A, INPUT);
@@ -50,16 +60,36 @@ void setup() {
   // Configure timer 1
   // 16-bit normal PWM output on channels A and B
   // No prescaler
-  TCCR1A = (TCCR1A & ~(0b11110000)) | (1 << COM1A1) | (1 << COM1B1);
-  TCCR1B = (TCCR1B & ~(0b00011111)) | (1 << CS10);
+  TCCR1A = (TCCR1A & ~(0b11110011)) | (1 << COM1A1) | (1 << COM1B1) | (1 << WGM11);
+  TCCR1B = (TCCR1B & ~(0b00011111)) | (1 << CS10) | (1 << WGM13);
+  ICR1 = 0xFFFF;
 }
 
+
+/////////////////////////////////////////////////
+////////////////////MAIN/////////////////////////
+/////////////////////////////////////////////////
 void loop() {
+
+  // COMM
+  if(DataRead){
+    if(data) targetPosition = (int32_t)(data - 1)*PULSES_PER_REVOLUTION/4;
+    Serial.println(position);
+    DataRead = false;
+  }
+  
   // put your main code here, to run repeatedly:
   static int32_t errorIntegral = 0;
   static uint32_t lastTime = 0;
   static int32_t lastPositionError = 0;
   int32_t motorPower;
+  static uint32_t lastSentTime = 0;
+
+  // Send thecurrent position of the motor every 100ms
+  /*if(millis() - lastSentTime > 100){
+    Serial.print(String(position));
+    lastSentTime = millis();
+  }*/
 
   // deltaTime is time since the last loop
   // Used for integral and derivitive approximation
@@ -81,6 +111,16 @@ void loop() {
 
   // Update the motor
   setMotor(motorPower);
+} //END LOOP
+
+
+// COMM
+void serialEvent(){
+  if(Serial.available() > 0){
+    data = Serial.read();
+    DataRead = true;
+  }
+  Serial.flush();
 }
 
 void setMotor(int32_t motorPower){
@@ -111,3 +151,5 @@ void encoderISR(){
   if(digitalRead(ENC_B)) position++;
   else position--;
 }
+
+//////////////END FUNCTIONS////////////////
