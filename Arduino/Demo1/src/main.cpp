@@ -158,7 +158,7 @@ int32_t distanceToPulses(float dist){
 }
 
 int32_t degreesToPulses(float deg){
-  return distanceToPulses(2*PI*WHEELBASE/2*deg/360);
+  return distanceToPulses(2*PI*WHEELBASE/2*deg/360)/2;
 }
 
 int32_t clamp(int32_t value, int32_t maximum, int32_t minimum){
