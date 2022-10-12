@@ -1,6 +1,8 @@
 #include <Arduino.h>
 
 #define PULSES_PER_REVOLUTION 800
+#define CIRCUMFERENCE 1.0f
+#define WHEELBASE 2.0f
 
 #define M1_ENC_A 2 // interrupt pin
 #define M1_ENC_B 5
@@ -22,8 +24,8 @@
 int32_t motorPosition[2] = {0};
 int32_t currentPosition = 0;
 int32_t currentRotation = 0;
-int32_t targetPosition = 000;
-int32_t targetRotation = 5000;
+int32_t targetPosition = 0;
+int32_t targetRotation = 0;
 
 void m1encoderISR();
 void m2encoderISR();
@@ -36,6 +38,8 @@ int32_t* scalerMultiply(int32_t* output, int32_t* input, int32_t scaler);
 int32_t clamp(int32_t value, int32_t maximum, int32_t minimum);
 void setMotor(int32_t* motorPower);
 
+int32_t distanceToPulses(float dist);
+int32_t degreesToPulses(float deg);
 
 void setup() {
   Serial.begin(115200);
@@ -76,6 +80,21 @@ void loop() {
   static uint32_t lastTime = 0;
   static int32_t lastPositionError = 0;
   static int32_t lastRotationError = 0;
+
+  if(Serial.available() >= sizeof(float) + 1){
+    char c = Serial.read();
+    if(c == 'A'){
+      float angle;
+      Serial.readBytes((byte*)&angle, sizeof(angle));
+      targetRotation = degreesToPulses(angle);
+    } else if(c == 'D'){
+      float dist;
+      Serial.readBytes((byte*)&dist, sizeof(dist));
+      targetRotation = distanceToPulses(dist);
+    }
+
+    Serial.flush();
+  }
 
   int32_t motorPower[2];
   int32_t positionError;
@@ -132,6 +151,14 @@ void setMotor(int32_t* motorPower){
     OCR1B = (uint16_t)(motorPower[1]);
     digitalWrite(DIR2, HIGH);
   }
+}
+
+int32_t distanceToPulses(float dist){
+  return dist/CIRCUMFERENCE*PULSES_PER_REVOLUTION;
+}
+
+int32_t degreesToPulses(float deg){
+  return distanceToPulses(2*PI*WHEELBASE/2*deg/360);
 }
 
 int32_t clamp(int32_t value, int32_t maximum, int32_t minimum){
