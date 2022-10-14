@@ -1,8 +1,8 @@
 #include <Arduino.h>
 
 #define PULSES_PER_REVOLUTION 800
-#define CIRCUMFERENCE 1.0f
-#define WHEELBASE 2.0f
+#define CIRCUMFERENCE 0.14605f*M_PI
+#define WHEELBASE 0.37465f
 
 #define M1_ENC_A 2 // interrupt pin
 #define M1_ENC_B 5
@@ -118,6 +118,18 @@ void loop() {
   motorPower[0] = positionError + rotationError;
   motorPower[1] = positionError - rotationError;
 
+  int32_t minimum = min(motorPower[0], motorPower[1]);
+  if(minimum < -0xFFFF){
+    motorPower[0] += -0xFFFF - minimum;
+    motorPower[1] += -0xFFFF - minimum;
+  }
+
+  int32_t maximum = max(motorPower[0], motorPower[1]);
+  if(maximum > 0xFFFF){
+    motorPower[0] -= maximum - 0xFFFF;
+    motorPower[1] -= maximum - 0xFFFF;
+  }
+
   /*Serial.print(motorPosition[0]);
   Serial.print("\t");
   Serial.print(motorPosition[1]);
@@ -158,7 +170,7 @@ int32_t distanceToPulses(float dist){
 }
 
 int32_t degreesToPulses(float deg){
-  return distanceToPulses(2*PI*WHEELBASE/2*deg/360)/2;
+  return distanceToPulses(PI*WHEELBASE*deg/360)/2;
 }
 
 int32_t clamp(int32_t value, int32_t maximum, int32_t minimum){
@@ -180,6 +192,7 @@ void m1encoderISR(){
   }
 
   currentPosition = (motorPosition[0] + motorPosition[1])/2;
+  currentRotation = motorPosition[0] - motorPosition[1];
 }
 
 void m2encoderISR(){
