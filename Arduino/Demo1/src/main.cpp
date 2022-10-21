@@ -81,17 +81,13 @@ void loop() {
   static int32_t lastPositionError = 0;
   static int32_t lastRotationError = 0;
 
-  if(Serial.available() >= sizeof(float) + 1){
+  if(Serial.available() >= sizeof(float)*2){
     char c = Serial.read();
-    if(c == 'A'){
-      float angle;
-      Serial.readBytes((byte*)&angle, sizeof(angle));
-      targetRotation = degreesToPulses(angle);
-    } else if(c == 'D'){
-      float dist;
-      Serial.readBytes((byte*)&dist, sizeof(dist));
-      targetRotation = distanceToPulses(dist);
-    }
+    float angle, dist;
+    Serial.readBytes((byte*)&angle, sizeof(angle));
+    Serial.readBytes((byte*)&dist, sizeof(dist));
+    targetPosition = distanceToPulses(dist);
+    targetRotation = degreesToPulses(angle);
 
     Serial.flush();
   }
