@@ -16,6 +16,8 @@ from picamera import PiCamera
 from cv2 import aruco
 import math
 import struct
+import os
+os.environ['DISPLAY'] = ':0'
 #from scipy.interpolate import interp1d
 
 # COMM - This is the address we setup in the Arduino Program
@@ -25,6 +27,9 @@ ARUCO_MARKER = 0
 ARUCO_ANGLE = 0
 ARUCO_ID = 0
 ARUCO_DIST = 0
+
+UPDATE_RATE = 2
+FUDGE_FACTOR = 9
 
 lutx = [21, 47, 69, 88, 107, 124, 138, 152, 164, 175, 185, 194, 203, 211, 218, 225, 231, 237, 243, 248, 254, 259, 263, 268, 272, 276, 280, 284, 287, 290, 293, 296, 299, 301, 304, 307, 310, 311, 314, 316, 318, 320, 322, 324, 326, 328, 330, 331, 333, 334, 336, 337, 339, 340, 342]
 luty = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55]
@@ -37,9 +42,6 @@ def LCD_stuff(SENT, RXED):
     # Modify this if you have a different sized Character LCD
     lcd_columns = 16
     lcd_rows = 2
-
-    # for RPI version 1, use “bus = smbus.SMBus(0)”
-    #bus = smbus2.SMBus(1)
 
     # Initialise I2C bus.
     i2c = board.I2C()  # uses board.SCL and board.SDA
@@ -103,6 +105,12 @@ camera = cv2.VideoCapture(0)
 # COMP VIS - Begin ArUCo detection
 
 lastMarker = 0
+lastTime = time.time()
+
+
+index = 0
+distancetoMove = [0, 12]
+angletoTurn = [90, 0]
 
 while(True):
     ret, frame = camera.read()
@@ -154,14 +162,15 @@ while(True):
                     #print calculate the angle, each if statement determines the sign of the angle
                     if arucoCenter[0] < (int(width)/2):
                         ARUCO_MARKER = 2
-                        objEdgeDist = ((int(width)/2) + arucoCenter[0])
-                        anglePose = (54/2) * (objEdgeDist/(int(width)/2)) * -1
-                        ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
+                        objEdgeDist = ((int(width)/2) - arucoCenter[0])
+                        ARUCO_ANGLE = (54/2) * (objEdgeDist/(int(width)/2)) * -1
+                        #print(objEdgeDist)
+                        #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
                     elif arucoCenter[0] > (int(width)/2):
                         ARUCO_MARKER = 1
-                        objEdgeDist = ((int(width)/2) + arucoCenter[0])
-                        anglePose = (54/2) * (objEdgeDist/(int(width)/2))
-                        ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
+                        objEdgeDist = (-(int(width)/2) + arucoCenter[0])
+                        ARUCO_ANGLE = (54/2) * (objEdgeDist/(int(width)/2))
+                        #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
                         
                         #Old code from mini project 1
 #                    elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
@@ -181,12 +190,12 @@ while(True):
                     
                     closestIndex = 53
                     for i in range(len(luty)):
-                        if abs(lutx[i] - lutx[closestIndex]) > abs(lutx[i] - markerHeight):
+                        if abs(lutx[i] - lutx[closestIndex]) > abs(lutx[i] - FUDGE_FACTOR - markerHeight):
                             closestIndex = i
                             
                     ARUCO_DIST = 10 + closestIndex
-                    print("Height:", markerHeight)
-                    print(ARUCO_DIST)
+                    #print("Height:", markerHeight)
+                    #print(ARUCO_DIST)
                         
                     #print("Vertical distance to bottom edge: "+str(height - bottomLeft[1]))
 #                else:
@@ -196,23 +205,38 @@ while(True):
 #                    else:
 #                        currentMarker = ids[i]
     
-    if lastMarker != ARUCO_ID:
+    if (lastMarker != ARUCO_ID or time.time() - lastTime >= UPDATE_RATE):# and (len(coordinates) != 0 or index <= 1):
+        lastTime = time.time()
         # COMM - Remember to encode the string to bytes
-        print ("\nRPI: Hi Arduino, I sent you ", ARUCO_ANGLE)
-        ser.write(bytearray(struct.pack("f", ARUCO_ANGLE)) + bytearray(struct.pack("f", ARUCO_DIST)))
+
+        if index > 1:
+            ARUCO_DIST = 0
+            ARUCO_ANGLE = 0
+        else: 
+            ARUCO_DIST = distancetoMove[index]
+            ARUCO_ANGLE = angletoTurn[index]/12
+            index += 1
+
+
+        if abs(ARUCO_ANGLE) > 3:
+            ARUCO_DIST = 0
+        else:
+            ARUCO_ANGLE = 0
+        print ("\nRPI: Hi Arduino, I sent you ", -ARUCO_ANGLE," and ", ARUCO_DIST)
+        ser.write('C'.encode())
+        ser.write(int(-ARUCO_ANGLE*1.7).to_bytes(4, byteorder='little', signed=True) + int(ARUCO_DIST).to_bytes(4, signed=True, byteorder='little'))
 
         # COMM - Wait for Arduino to set up response
         #time.sleep(2)
+        
+        #print(ser.readline())
 
         ser.flush()
 
         # COMM - Print to LCD
-        LCD_stuff(ARUCO_ID, ARUCO_ANGLE)
+        LCD_stuff(ARUCO_ANGLE, ARUCO_ID)
         
         lastMarker = ARUCO_ID
-
-        while True:
-            ReadFromArduino()
         
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
