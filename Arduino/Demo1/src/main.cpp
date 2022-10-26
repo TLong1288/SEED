@@ -1,8 +1,6 @@
-#include <Arduino.h>
-
-#define PULSES_PER_REVOLUTION 800
-#define CIRCUMFERENCE 0.14605f*M_PI
-#define WHEELBASE 0.37465f
+#define PULSES_PER_REVOLUTION (800.0f)
+#define CIRCUMFERENCE (2*M_PI*3)
+#define WHEELBASE (14.0f)
 
 #define M1_ENC_A 2 // interrupt pin
 #define M1_ENC_B 5
@@ -13,13 +11,13 @@
 #define DIR2 8
 #define DIR1 7
 
-#define positionKp 300
+#define positionKp 150
 #define positionKi 1
-#define positionKd 1
+#define positionKd 0
 
-#define rotationKp 150
-#define rotationKi 1
-#define rotationKd 1
+#define rotationKp 100
+#define rotationKi 5
+#define rotationKd 0
 
 int32_t motorPosition[2] = {0};
 int32_t currentPosition = 0;
@@ -81,15 +79,32 @@ void loop() {
   static int32_t lastPositionError = 0;
   static int32_t lastRotationError = 0;
 
-  if(Serial.available() >= sizeof(float)*2){
-    char c = Serial.read();
-    float angle, dist;
-    Serial.readBytes((byte*)&angle, sizeof(angle));
-    Serial.readBytes((byte*)&dist, sizeof(dist));
-    targetPosition = distanceToPulses(dist);
-    targetRotation = degreesToPulses(angle);
+  static uint8_t buffer[sizeof(int32_t)*2];
+  static int8_t index = -1;
 
-    Serial.flush();
+  if(index == -1 && Serial.read() == 'C') index = 0;
+
+  if(Serial.available() > 0 && index != -1){
+    uint8_t bytesRead = min(8 - index, Serial.available());
+    Serial.readBytes(buffer + index, bytesRead);
+    index += bytesRead;
+
+    if(index >= 7){
+      int32_t dist = *(int32_t*)(buffer + 4);
+      int32_t angle = *(int32_t*)buffer;
+      motorPosition[0] = 0;
+      motorPosition[1] = 0;
+      currentPosition = 0;
+      currentRotation = 0;
+      positionErrorIntegral = 0;
+      rotationErrorIntegral = 0;
+      targetPosition = distanceToPulses((float)dist);
+      targetRotation = degreesToPulses((float)angle);
+
+      //Serial.println(String(rotationErrorIntegral));
+
+      index = -1;
+    }
   }
 
   int32_t motorPower[2];
@@ -111,19 +126,30 @@ void loop() {
   lastRotationError = targetRotation - currentRotation;
   
 
+  /*if(targetPosition != 0){
+    motorPower[0] = positionError;
+    motorPower[1] = positionError;
+  }else{
+    motorPower[0] = rotationError;
+    motorPower[1] = -rotationError;
+  }*/
   motorPower[0] = positionError + rotationError;
   motorPower[1] = positionError - rotationError;
 
+  //if(printStuff){
+  //  Serial.print(String(motorPower[0]) + " " + String(motorPower[1]) + " ");
+  //}
+
   int32_t minimum = min(motorPower[0], motorPower[1]);
-  if(minimum < -0xFFFF){
-    motorPower[0] += -0xFFFF - minimum;
-    motorPower[1] += -0xFFFF - minimum;
+  if(minimum < -65535){
+    motorPower[0] += -65535 - minimum;
+    motorPower[1] += -65535 - minimum;
   }
 
   int32_t maximum = max(motorPower[0], motorPower[1]);
   if(maximum > 0xFFFF){
-    motorPower[0] -= maximum - 0xFFFF;
-    motorPower[1] -= maximum - 0xFFFF;
+    motorPower[0] -= maximum - 65535;
+    motorPower[1] -= maximum - 65535;
   }
 
   /*Serial.print(motorPosition[0]);
@@ -162,11 +188,11 @@ void setMotor(int32_t* motorPower){
 }
 
 int32_t distanceToPulses(float dist){
-  return dist/CIRCUMFERENCE*PULSES_PER_REVOLUTION;
+  return PULSES_PER_REVOLUTION*dist/CIRCUMFERENCE;
 }
 
 int32_t degreesToPulses(float deg){
-  return distanceToPulses(PI*WHEELBASE*deg/360)/2;
+  return distanceToPulses((PI*deg/180)*(WHEELBASE/2))*2;
 }
 
 int32_t clamp(int32_t value, int32_t maximum, int32_t minimum){
