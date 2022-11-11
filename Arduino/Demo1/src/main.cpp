@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 #define PULSES_PER_REVOLUTION (800.0f)
 #define CIRCUMFERENCE (2*M_PI*3)
 #define WHEELBASE (14.0f)
@@ -11,13 +13,22 @@
 #define DIR2 8
 #define DIR1 7
 
-#define positionKp 150
-#define positionKi 1
-#define positionKd 0
+#define POSITION_TOLERANCE 20
 
-#define rotationKp 100
-#define rotationKi 5
-#define rotationKd 0
+#define MAX_PWM 65535
+#define MAX_ACCEL (65535*4)
+
+#define positionKp 90L
+#define positionKi 10L
+#define positionKd 30L
+
+#define largeRotationKp 75L
+#define largeRotationKi 40L
+#define largeRotationKd 40L
+
+#define smallRotationKp 350L
+#define smallRotationKi 150L
+#define smallRotationKd 20L
 
 int32_t motorPosition[2] = {0};
 int32_t currentPosition = 0;
@@ -78,6 +89,11 @@ void loop() {
   static uint32_t lastTime = 0;
   static int32_t lastPositionError = 0;
   static int32_t lastRotationError = 0;
+  static int32_t lastMotorPower[2] = {0};
+  
+  static int32_t rotationKp = largeRotationKp;
+  static int32_t rotationKi = largeRotationKi;
+  static int32_t rotationKd = largeRotationKd;
 
   static uint8_t buffer[sizeof(int32_t)*2];
   static int8_t index = -1;
@@ -97,11 +113,21 @@ void loop() {
       currentPosition = 0;
       currentRotation = 0;
       positionErrorIntegral = 0;
-      rotationErrorIntegral = 0;
-      targetPosition = distanceToPulses((float)dist);
-      targetRotation = degreesToPulses((float)angle);
+      //rotationErrorIntegral = 0;
+      targetPosition = distanceToPulses(((float)dist)/10.0f);
+      targetRotation = degreesToPulses(((float)angle)/10.0f);
 
-      //Serial.println(String(rotationErrorIntegral));
+      if(abs(angle) > 100){
+        rotationKp = largeRotationKp;
+        rotationKi = largeRotationKi;
+        rotationKd = largeRotationKd;
+      }else{
+        rotationKp = smallRotationKp;
+        rotationKi = smallRotationKi;
+        rotationKd = smallRotationKd;
+      }
+
+      //Serial.println(String(targetRotation));
 
       index = -1;
     }
@@ -115,6 +141,11 @@ void loop() {
   // Used for integral and derivitive approximation
   uint32_t deltaTime = millis() - lastTime;
   lastTime = millis();
+
+  if(abs(targetPosition - currentPosition) < POSITION_TOLERANCE && abs(targetRotation - currentRotation) < POSITION_TOLERANCE){
+    positionErrorIntegral = 0;
+    rotationErrorIntegral = 0;
+  }
 
   positionErrorIntegral += ((targetPosition - currentPosition)*((int32_t)deltaTime));
   positionError = positionKp*(targetPosition - currentPosition) + (positionKi*positionErrorIntegral)/1000 + (positionKd*1000*((targetPosition - currentPosition) - lastPositionError))/deltaTime;
@@ -141,30 +172,44 @@ void loop() {
   //}
 
   int32_t minimum = min(motorPower[0], motorPower[1]);
-  if(minimum < -65535){
-    motorPower[0] += -65535 - minimum;
-    motorPower[1] += -65535 - minimum;
+  if(minimum < -MAX_PWM){
+    motorPower[0] += -MAX_PWM - minimum;
+    motorPower[1] += -MAX_PWM - minimum;
   }
 
   int32_t maximum = max(motorPower[0], motorPower[1]);
-  if(maximum > 0xFFFF){
-    motorPower[0] -= maximum - 65535;
-    motorPower[1] -= maximum - 65535;
+  if(maximum > MAX_PWM){
+    motorPower[0] -= maximum - MAX_PWM;
+    motorPower[1] -= maximum - MAX_PWM;
   }
 
-  /*Serial.print(motorPosition[0]);
-  Serial.print("\t");
-  Serial.print(motorPosition[1]);
-  Serial.print("\t");
-  Serial.println(currentRotation);*/
+  motorPower[0] = clamp(motorPower[0], MAX_PWM, -MAX_PWM);
+  motorPower[1] = clamp(motorPower[1], MAX_PWM, -MAX_PWM);
+  
+
+  if(((motorPower[0] - lastMotorPower[0])) > (int32_t)((MAX_ACCEL*deltaTime)/1000)){
+    motorPower[0] = lastMotorPower[0] + (MAX_ACCEL*deltaTime)/1000;
+  }else if(((lastMotorPower[0] - motorPower[0])) > (int32_t)((MAX_ACCEL*deltaTime)/1000)){
+    motorPower[0] = lastMotorPower[0] - ((MAX_ACCEL*deltaTime)/1000);
+  }
+
+  if(((motorPower[1] - lastMotorPower[1])) > (int32_t)((deltaTime*MAX_ACCEL)/1000)){
+    motorPower[1] = lastMotorPower[1] + (MAX_ACCEL*deltaTime)/1000;
+  }else if(((lastMotorPower[1] - motorPower[1])) > (int32_t)((MAX_ACCEL*deltaTime)/1000)){
+    motorPower[1] = lastMotorPower[1] - (MAX_ACCEL*deltaTime)/1000;
+  }
+
+  motorPower[0] = clamp(motorPower[0], MAX_PWM, -MAX_PWM);
+  motorPower[1] = clamp(motorPower[1], MAX_PWM, -MAX_PWM);
+
+  lastMotorPower[0] = motorPower[0];
+  lastMotorPower[1] = motorPower[1];
 
   setMotor(motorPower);
 }
 
 void setMotor(int32_t* motorPower){
   // Make sure motor power is within appropriate bounds
-  motorPower[0] = clamp(motorPower[0], 65535, -65535);
-  motorPower[1] = clamp(motorPower[1], 65535, -65535);
 
   // Set output pins
   if(motorPower[0] >= 0){
@@ -219,10 +264,10 @@ void m1encoderISR(){
 
 void m2encoderISR(){
   if(digitalRead(M2_ENC_B)) {
-    motorPosition[1]++;
+    motorPosition[1]--;
     //currentRotation--;
   }else{
-    motorPosition[1]--;
+    motorPosition[1]++;
     //currentRotation++;
   }
 
