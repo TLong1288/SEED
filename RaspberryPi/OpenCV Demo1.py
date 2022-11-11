@@ -28,35 +28,41 @@ ARUCO_ANGLE = 0
 ARUCO_ID = 0
 ARUCO_DIST = 0
 
-UPDATE_RATE = 2
-FUDGE_FACTOR = 9
+UPDATE_RATE = 1.5
+SCANNER_TIMEOUT = 5
+FUDGE_FACTOR = 6
+DISTANCE_AWAY = 2
 
 lutx = [21, 47, 69, 88, 107, 124, 138, 152, 164, 175, 185, 194, 203, 211, 218, 225, 231, 237, 243, 248, 254, 259, 263, 268, 272, 276, 280, 284, 287, 290, 293, 296, 299, 301, 304, 307, 310, 311, 314, 316, 318, 320, 322, 324, 326, 328, 330, 331, 333, 334, 336, 337, 339, 340, 342]
 luty = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55]
+
+MARKERS_USED = [1, 2, 3, 4, 5, 6]
+
+j = 0
 
 # COMM - Wait for connection to complete
 time.sleep(3)
 
 # COMM - LCD Stuff
-def LCD_stuff(SENT, RXED):
+#def LCD_stuff(SENT, RXED):
     # Modify this if you have a different sized Character LCD
-    lcd_columns = 16
-    lcd_rows = 2
+    #lcd_columns = 16
+    #lcd_rows = 2
 
     # Initialise I2C bus.
-    i2c = board.I2C()  # uses board.SCL and board.SDA
+    #i2c = board.I2C()  # uses board.SCL and board.SDA
 
     # Initialise the LCD class
-    lcd = character_lcd.Character_LCD_RGB_I2C(i2c, lcd_columns, lcd_rows)
+    #lcd = character_lcd.Character_LCD_RGB_I2C(i2c, lcd_columns, lcd_rows)
         
-    lcd.clear()
+    #lcd.clear()
     
     # Set LCD color to red
-    lcd.color = [0, 100, 0]
+    #lcd.color = [0, 100, 0]
     
     # Print two line message
-    lcd.message = "SENT: " + str(SENT) + "\nRXED: " + str(RXED)
-    return None
+    #lcd.message = "SENT: " + str(SENT) + "\nRXED: " + str(RXED)
+    #return None
 
 # COMM - Function to read serial
 def ReadfromArduino():
@@ -111,6 +117,9 @@ lastTime = time.time()
 index = 0
 distancetoMove = [0, 12]
 angletoTurn = [90, 0]
+lastMarkerSeen = time.time()
+
+currentNum = 1
 
 while(True):
     ret, frame = camera.read()
@@ -128,10 +137,22 @@ while(True):
 
         #convert marker coordinates to integers
         for (markerCoord, markerID) in zip(coordinates, ids):
+#            print(ids)
             currentMarker = 0
             i = 0
+            #for i in range(len(ids)):
+#            i = np.where(ids == currentNum)
+#            print(i)
+#            i = i[0]
+#            if i < 0:
+#                continue
+            
+#            currentNum += 1
+            #currentMarker = ids[i]
+#            print(currentMarker)
             for i in range(len(ids)):
                 currentMarker = ids[i]
+
                 if currentMarker == ids[i]:
                     ARUCO_ID = currentMarker
                     coordinates = markerCoord.reshape((4,2))
@@ -173,16 +194,16 @@ while(True):
                         #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
                         
                         #Old code from mini project 1
-#                    elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
-#                        ARUCO_MARKER = 3
-#                        objEdgeDist = (int(width)/2) + arucoCenter[0])
-#                        anglePose = (54/2) * (objEdgeDist/(int(width)/2)) * -1
-#                        ARUCO_ANGLE = '{0:.3g}'.format(anglePose)
-#                    elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] > (int(height)/2):
-#                        ARUCO_MARKER = 4
-#                        objEdgeDist = (int(width)/2) + arucoCenter[0])
-#                        anglePose = (54/2) * (objEdgeDist/(int(width)/2))
-#                        ARUCO_ANGLE = '{0:.3g}'.format(anglePose)
+    #                    elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
+    #                        ARUCO_MARKER = 3
+    #                        objEdgeDist = (int(width)/2) + arucoCenter[0])
+    #                        anglePose = (54/2) * (objEdgeDist/(int(width)/2)) * -1
+    #                        ARUCO_ANGLE = '{0:.3g}'.format(anglePose)
+    #                    elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] > (int(height)/2):
+    #                        ARUCO_MARKER = 4
+    #                        objEdgeDist = (int(width)/2) + arucoCenter[0])
+    #                        anglePose = (54/2) * (objEdgeDist/(int(width)/2))
+    #                        ARUCO_ANGLE = '{0:.3g}'.format(anglePose)
                     else:
                         ARUCO_MARKER = 0
                     
@@ -193,38 +214,41 @@ while(True):
                         if abs(lutx[i] - lutx[closestIndex]) > abs(lutx[i] - FUDGE_FACTOR - markerHeight):
                             closestIndex = i
                             
-                    ARUCO_DIST = 10 + closestIndex
+                    ARUCO_DIST = 10 + closestIndex - DISTANCE_AWAY
                     #print("Height:", markerHeight)
                     #print(ARUCO_DIST)
                         
                     #print("Vertical distance to bottom edge: "+str(height - bottomLeft[1]))
-#                else:
-#                    i += 1
-#                    if i == len(ids):
-#                        continue
-#                    else:
-#                        currentMarker = ids[i]
-    
-    if (lastMarker != ARUCO_ID or time.time() - lastTime >= UPDATE_RATE):# and (len(coordinates) != 0 or index <= 1):
+    #                else:
+    #                    i += 1
+    #                    if i == len(ids):
+    #                        continue
+    #                    else:
+    #                        currentMarker = ids[i]
+    #for j in range
+#    print(ARUCO_ID, " ", MARKERS_USED[j])
+    if (lastMarker != ARUCO_ID or time.time() - lastTime >= UPDATE_RATE) and (len(coordinates) != 0):
         lastTime = time.time()
+        lastMarkerSeen = time.time()
         # COMM - Remember to encode the string to bytes
 
-        if index > 1:
+        '''if index > 1:
             ARUCO_DIST = 0
             ARUCO_ANGLE = 0
         else: 
             ARUCO_DIST = distancetoMove[index]
-            ARUCO_ANGLE = angletoTurn[index]/12
-            index += 1
+            ARUCO_ANGLE = angletoTurn[index]
+            index += 1'''
 
+        ARUCO_ANGLE += 2
 
-        if abs(ARUCO_ANGLE) > 3:
+        if abs(ARUCO_ANGLE) > 2.1:
             ARUCO_DIST = 0
-        else:
-            ARUCO_ANGLE = 0
+        #else:
+        #    ARUCO_ANGLE = 0
         print ("\nRPI: Hi Arduino, I sent you ", -ARUCO_ANGLE," and ", ARUCO_DIST)
         ser.write('C'.encode())
-        ser.write(int(-ARUCO_ANGLE*1.7).to_bytes(4, byteorder='little', signed=True) + int(ARUCO_DIST).to_bytes(4, signed=True, byteorder='little'))
+        ser.write(int(-ARUCO_ANGLE*10).to_bytes(4, byteorder='little', signed=True) + int(ARUCO_DIST*10).to_bytes(4, signed=True, byteorder='little'))
 
         # COMM - Wait for Arduino to set up response
         #time.sleep(2)
@@ -234,9 +258,21 @@ while(True):
         ser.flush()
 
         # COMM - Print to LCD
-        LCD_stuff(ARUCO_ANGLE, ARUCO_ID)
-        
+        #LCD_stuff(ARUCO_ANGLE, ARUCO_ID)
+        #print(lastMarker, " ", ARUCO_ID)
         lastMarker = ARUCO_ID
+        if (ids[0] != MARKERS_USED[j]) or (ids is None):
+            if (j < 6):
+                j += 1
+            #else:
+                #j = 0
+    elif time.time() - lastTime >= UPDATE_RATE and time.time() - lastMarkerSeen >= SCANNER_TIMEOUT:
+        lastTime = time.time()
+        print("\nScanning")
+        ser.write('C'.encode())
+        ser.write(int(-30*2*10).to_bytes(4, byteorder='little', signed=True) + int(0).to_bytes(4, signed=True, byteorder='little'))
+        ser.flush()
+
         
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
