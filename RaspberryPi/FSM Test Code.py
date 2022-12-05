@@ -28,15 +28,16 @@ ARUCO_ANGLE = 0
 ARUCO_ID = 0
 ARUCO_DIST = 0
 
-UPDATE_RATE = 1
-SCANNER_TIMEOUT = 5
-FUDGE_FACTOR = -14
+UPDATE_RATE = 1.5
+SCANNER_TIMEOUT = 8
+FUDGE_FACTOR = 0
 DISTANCE_AWAY = 0
+LOST_MARKER_TIMEOUT = 5
 
 lutx = [21, 47, 69, 88, 107, 124, 138, 152, 164, 175, 185, 194, 203, 211, 218, 225, 231, 237, 243, 248, 254, 259, 263, 268, 272, 276, 280, 284, 287, 290, 293, 296, 299, 301, 304, 307, 310, 311, 314, 316, 318, 320, 322, 324, 326, 328, 330, 331, 333, 334, 336, 337, 339, 340, 342]
 luty = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55]
 
-MARKERS_USED = [1, 2, 3, 4, 5, 6]
+MARKERS_USED = [0, 1, 2, 3, 4, 5]
 
 # COMM - Wait for connection to complete
 time.sleep(3)
@@ -99,7 +100,7 @@ ARUCO_DICT = {
 }
 
 # COMP VIS - set up camera
-arucoDictionary = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_5X5_100"])
+arucoDictionary = cv2.aruco.Dictionary_get(ARUCO_DICT["DICT_4X4_100"]) #"DICT_5X5_100"
 arucoParameter = cv2.aruco.DetectorParameters_create()
 
 print("enter\'q\' to exit video capture") 
@@ -118,67 +119,109 @@ angletoTurn = [90, 0]
 lastMarkerSeen = time.time()
 
 currentNum = 1
-incrementList = 0
+incrementList = 1
+
+hasMoved = [False, False, False, False, False, False, False, False]
+moving = [False, False, False, False, False, False, False, False]
+
 #scanning state
 def SCAN_STATE(lastMarkerMatch, timeVsUpdateRate, scannerTimeout, idsFound, matchMarker):
-    lastTime = time.time()
-    print("\nScanning")
-    ser.write('C'.encode())
-    ser.write(int(-30*2*10).to_bytes(4, byteorder='little', signed=True) + int(0).to_bytes(4, signed=True, byteorder='little'))
-    ser.flush()
-    if ((lastMarkerMatch == False) or (timeVsUpdateRate == True)) and (idsFound == True) and (matchMarker == True):
+    global lastTime
+    global incrementList
+    if timeVsUpdateRate:
+        lastTime = time.time()
+        ser.write('C'.encode())
+        ser.write(int(-40*10).to_bytes(4, byteorder='little', signed=True) + int(0).to_bytes(4, signed=True, byteorder='little'))
+        ser.flush()
+        print("Scanning for marker:", incrementList)
+    if  (idsFound == True) and (matchMarker == True):
 #        print("starting read to Arduino")
         return WRITE_TO_ARDUINO_STATE
     else:
         return SCAN_STATE
     
 def WRITE_TO_ARDUINO_STATE(lastMarkerMatch, timeVsUpdateRate, scannerTimeout, idsFound, matchMarker):
-    lastTime = time.time()
-    lastMarkerSeen = time.time()
-        # COMM - Remember to encode the string to bytes
+    global lastMarkerSeen
+    global lastTime
+    global ARUCO_ANGLE
+    global ARUCO_DIST
+    global incrementList
+    if time.time() - lastTime >= UPDATE_RATE:
+        lastTime = time.time()
 
-    '''if index > 1:
-        ARUCO_DIST = 0
-        ARUCO_ANGLE = 0
-    else: 
-        ARUCO_DIST = distancetoMove[index]
-        ARUCO_ANGLE = angletoTurn[index]
-        index += 1'''
+        if ((idsFound == False) or (matchMarker == False)):
+            if incrementList > 6:
+                return SPIN_STATE
+            if hasMoved[incrementList]:
+                return INC_MARKER_LIST_STATE
+            if time.time() - lastMarkerSeen > LOST_MARKER_TIMEOUT:
+                return SCAN_STATE
+            return WRITE_TO_ARDUINO_STATE
+        lastMarkerSeen = time.time()
+        ARUCO_ANGLE += 2
 
-        #ARUCO_ANGLE += 2
+        angleTolerance = 2
+        if moving[incrementList]:
+            angleTolerance = 3
 
-    if abs(ARUCO_ANGLE) > 2.1:
-        global ARUCO_DIST
-        ARUCO_DIST = 0
-        #else:
-        #    ARUCO_ANGLE = 0
-    print ("\nRPI: Hi Arduino, I sent you ", -ARUCO_ANGLE," and ", ARUCO_DIST)
-    ser.write('C'.encode())
-    ser.write(int(-ARUCO_ANGLE*10).to_bytes(4, byteorder='little', signed=True) + int(ARUCO_DIST*10).to_bytes(4, signed=True, byteorder='little'))
+        if abs(ARUCO_ANGLE) > angleTolerance:
+            if not hasMoved[incrementList]:
+                ARUCO_DIST = 0
+        else:
+            hasMoved[incrementList] = True
+            moving[incrementList] = True
+            #else:
+            #    ARUCO_ANGLE = 0
+        print ("\nRPI: Hi Arduino, I sent you ", -ARUCO_ANGLE," and ", ARUCO_DIST, " moving towards marker ", incrementList)
+        ser.write('C'.encode())
+        ser.write(int(-ARUCO_ANGLE*10).to_bytes(4, byteorder='little', signed=True) + int(ARUCO_DIST*10).to_bytes(4, signed=True, byteorder='little'))
 
-        # COMM - Wait for Arduino to set up response
-        #time.sleep(2)
-        
-        #print(ser.readline())
+            # COMM - Wait for Arduino to set up response
+            #time.sleep(2)
+            
+            #print(ser.readline())
 
-    ser.flush()
+        ser.flush()
 
-        # COMM - Print to LCD
-        #LCD_stuff(ARUCO_ANGLE, ARUCO_ID)
-    if ((idsFound == False) or (matchMarker == False)) and (timeVsUpdateRate == True) and (scannerTimeout == True):
-#        print("increment j")
-        return INC_MARKER_LIST_STATE
-    else:
-        return WRITE_TO_ARDUINO_STATE
+            # COMM - Print to LCD
+            #LCD_stuff(ARUCO_ANGLE, ARUCO_ID)
+        if ((idsFound == False) or (matchMarker == False)):
+            if incrementList > 6:
+                return SPIN_STATE
+            if hasMoved[incrementList]:
+                return INC_MARKER_LIST_STATE
+            if time.time() - lastMarkerSeen > LOST_MARKER_TIMEOUT:
+                return SCAN_STATE
+    return WRITE_TO_ARDUINO_STATE
 
 def INC_MARKER_LIST_STATE(lastMarkerMatch, timeVsUpdateRate, scannerTimeout, idsFound, matchMarker):
     global incrementList
+
+    if not scannerTimeout:
+        print("waiting")
+        return INC_MARKER_LIST_STATE
+    scannerTimeout = time.time()
+
     if (incrementList < 6):
         incrementList += 1
     else:
         incrementList = 0
     print(incrementList)
+    if incrementList > 6:
+        return SPIN_STATE
     return SCAN_STATE
+
+def SPIN_STATE(lastMarkerMatch, timeVsUpdateRate, scannerTimeout, idsFound, matchMarker):
+    global lastTime
+
+    if time.time() - lastTime > UPDATE_RATE/2:
+        lastTime = time.time()
+        ser.write('C'.encode())
+        ser.write(int(180*10).to_bytes(4, byteorder='little', signed=True) + int(0).to_bytes(4, signed=True, byteorder='little'))
+        ser.flush()
+        print("SPINNING")
+    return SPIN_STATE
+
 
 state = SCAN_STATE
 
@@ -191,88 +234,89 @@ while(True):
     
     (coordinates, ids, rejectedIds) = cv2.aruco.detectMarkers(frame, arucoDictionary, parameters=arucoParameter)
 
+
     # COMP VIS - verify marker existence and print ids
     if len(coordinates) > 0:
         ids = ids.flatten()
-        ids.sort()
+        #ids.sort()
+        ARUCO_ID = -1
+        i = 0
 
         #convert marker coordinates to integers
-        for (markerCoord, markerID) in zip(coordinates, ids):
+        for markerCoord, markerID in zip(coordinates, ids):
 #            print(ids)
-            currentMarker = 0
-            i = 0
             #for i in range(len(ids)):
 #            i = np.where(ids == currentNum)
 #            print(i)
 #            i = i[0]
 #            if i < 0:
 #                continue
+            #print("ID: ", markerID)
+            if markerID != incrementList:
+                continue
+            ARUCO_ID = markerID
             
 #            currentNum += 1
-            currentMarker = ids[i]
+            '''currentMarker = ids[i]
 #            print(currentMarker)
             if currentMarker == ids[i]:
-                ARUCO_ID = currentMarker
-                coordinates = markerCoord.reshape((4,2))
-                (topLeft, topRight, bottomRight, bottomLeft) = coordinates
-        
-                topLeft = (int(topLeft[0]), int(topLeft[1]))
-                topRight = (int(topRight[0]), int(topRight[1]))
-                bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
-                bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
-
-                #calculate the position of the marker
-                #use marker center location in compas quadrant
-                #(height, width) = frame.shape
-
-                #determine quadrant location
-                #aruco center gives x then y coordinates of marker center
-                arucoCenter = [(topLeft[0] + ((topRight[0] - topLeft[0])/2)), (topRight[1] + ((bottomRight[1] - topRight[1])/2))]
-                
-                height = 480
-                width = 680
-                
-                #interpolate = interp1d(lutx, luty)
-                #calculate the angle of the marker
-                objEdgeDist = (int(width)/2) + ((topRight[0] - topLeft[0]) + topLeft[0])
-                anglePose = (54/2) * (objEdgeDist/(int(width)/2))
-                result = '{0:.3g}'.format(anglePose)
-                
-                #print calculate the angle, each if statement determines the sign of the angle
-                if arucoCenter[0] < (int(width)/2):
-                    ARUCO_MARKER = 2
-                    objEdgeDist = ((int(width)/2) - arucoCenter[0])
-                    ARUCO_ANGLE = (54/2) * (objEdgeDist/(int(width)/2)) * -1
-                    #print(objEdgeDist)
-                    #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
-                elif arucoCenter[0] > (int(width)/2):
-                    ARUCO_MARKER = 1
-                    objEdgeDist = (-(int(width)/2) + arucoCenter[0])
-                    ARUCO_ANGLE = (54/2) * (objEdgeDist/(int(width)/2))
-                    #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
-                    
-                    #Old code from mini project 1
-#                    elif arucoCenter[0] < (int(width)/2) and arucoCenter[1] > (int(height)/2):
-#                        ARUCO_MARKER = 3
-#                        objEdgeDist = (int(width)/2) + arucoCenter[0])
-#                        anglePose = (54/2) * (objEdgeDist/(int(width)/2)) * -1
-#                        ARUCO_ANGLE = '{0:.3g}'.format(anglePose)
-#                    elif arucoCenter[0] > (int(width)/2) and arucoCenter[1] > (int(height)/2):
-#                        ARUCO_MARKER = 4
-#                        objEdgeDist = (int(width)/2) + arucoCenter[0])
-#                        anglePose = (54/2) * (objEdgeDist/(int(width)/2))
-#                        ARUCO_ANGLE = '{0:.3g}'.format(anglePose)
+                if currentMarker == incrementList + 1:
+                    ARUCO_ID = currentMarker
                 else:
-                    ARUCO_MARKER = 0
+                    i += 1
+                    continue'''
+            (topLeft, topRight, bottomRight, bottomLeft) = markerCoord.reshape((4,2))
+    
+            topLeft = (int(topLeft[0]), int(topLeft[1]))
+            topRight = (int(topRight[0]), int(topRight[1]))
+            bottomLeft = (int(bottomLeft[0]), int(bottomLeft[1]))
+            bottomRight = (int(bottomRight[0]), int(bottomRight[1]))
+
+            #calculate the position of the marker
+            #use marker center location in compas quadrant
+            #(height, width) = frame.shape
+
+            #determine quadrant location
+            #aruco center gives x then y coordinates of marker center
+            arucoCenter = [(topLeft[0] + ((topRight[0] - topLeft[0])/2)), (topRight[1] + ((bottomRight[1] - topRight[1])/2))]
+            
+            height = 480
+            width = 680
+            
+            #interpolate = interp1d(lutx, luty)
+            #calculate the angle of the marker
+            objEdgeDist = (int(width)/2) + ((topRight[0] - topLeft[0]) + topLeft[0])
+            anglePose = (54/2) * (objEdgeDist/(int(width)/2))
+            result = '{0:.3g}'.format(anglePose)
+            
+            #print calculate the angle, each if statement determines the sign of the angle
+            if arucoCenter[0] < (int(width)/2):
+                ARUCO_MARKER = 2
+                objEdgeDist = ((int(width)/2) - arucoCenter[0])
+                ARUCO_ANGLE = (54/2) * (objEdgeDist/(int(width)/2)) * -1
+                #print(objEdgeDist)
+                #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
+            elif arucoCenter[0] > (int(width)/2):
+                ARUCO_MARKER = 1
+                objEdgeDist = (-(int(width)/2) + arucoCenter[0])
+                ARUCO_ANGLE = (54/2) * (objEdgeDist/(int(width)/2))
+                #ARUCO_ANGLE = float('{0:.3g}'.format(anglePose))
                 
-                markerHeight = height - bottomLeft[1]
-                
-                closestIndex = 53
-                for i in range(len(luty)):
-                    if abs(lutx[i] - lutx[closestIndex]) > abs(lutx[i] - FUDGE_FACTOR - markerHeight):
-                        closestIndex = i
-                        
-                ARUCO_DIST = 10 + closestIndex - DISTANCE_AWAY
+            else:
+                ARUCO_MARKER = 0
+            
+            markerHeight = height - bottomLeft[1]
+            
+            closestIndex = 53
+            for j in range(len(luty)):
+                if abs(lutx[j] - lutx[closestIndex]) > abs(lutx[j] - markerHeight):
+                    closestIndex = j
+                    
+            ARUCO_DIST = 10 + closestIndex - DISTANCE_AWAY - FUDGE_FACTOR
+            if ARUCO_DIST > 3*12:
+                ARUCO_DIST -= 25
+                hasMoved[incrementList] = False
+            #i += 1
                 #print("Height:", markerHeight)
                 #print(ARUCO_DIST)
                     
@@ -286,12 +330,15 @@ while(True):
     #for j in range
 #    print(ARUCO_ID, " ", MARKERS_USED[j])
 #    print(j, " ", ids)
+    global lastMerkerSeen
+    global scannerTimeout
     lastMarkerMatch = (lastMarker != ARUCO_ID)
     timeVsUpdateRate = (time.time() - lastTime >= UPDATE_RATE)
-    scannerTimeout = (time.time() - lastMarkerSeen >= SCANNER_TIMEOUT)
+    scannerTimeout = ((time.time() - lastMarkerSeen) >= SCANNER_TIMEOUT)
     idsFound = (len(coordinates) != 0)
-    matchMarker = (ARUCO_ID == MARKERS_USED[incrementList])
-    print(MARKERS_USED[incrementList])
+    matchMarker = (ARUCO_ID == incrementList)
+
+
     
     #start fsm
 #    print("launching fsm")
